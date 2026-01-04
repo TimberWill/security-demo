@@ -2,11 +2,7 @@ package com.whl.security.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.core.userdetails.User;
-import org.springframework.security.core.userdetails.UserDetailsService;
-import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
 
 @Configuration //配置类
@@ -22,12 +18,18 @@ public class WebSecurityConfig {
           .authenticated()
         )
         //自动使用表单授权方式【注释后就没有html的登录页面了，就只有浏览器默认自带的】
-        .formLogin(Customizer.withDefaults());
+        .formLogin(form -> {
+          form.loginPage("/login").permitAll()
+            .usernameParameter("myusername")
+            .passwordParameter("mypassword")
+            .failureUrl("/login?error")//校验失败时跳转
+          ;
+        });
         //基本授权方式
         //.httpBasic(Customizer.withDefaults());
 
     //关闭CSRF攻击防御
-    http.csrf(csrf -> csrf.disable());
+//    http.csrf(csrf -> csrf.disable());
 
     return http.build();
   }
