@@ -4,6 +4,8 @@ import com.whl.security.entity.User;
 import com.whl.security.service.UserService;
 import jakarta.annotation.Resource;
 import java.util.List;
+
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -21,6 +23,7 @@ public class UserController {
    *
    * @return
    */
+  @PreAuthorize("hasRole('ADMIN') and authentication.name == 'admin'")
   @GetMapping("/list")
   public List<User> getList() {
     return userService.list();
@@ -32,6 +35,8 @@ public class UserController {
    * @param user 用户信息
    * @return
    */
+//  @PreAuthorize("hasRole('ADMIN')")
+  @PreAuthorize("hasAuthority('USER_ADD')")
   @PostMapping("/add")
   public void add(@RequestBody User user) {
     userService.saveUserDetails(user);

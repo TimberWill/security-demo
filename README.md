@@ -60,7 +60,7 @@
 
 -----
 
-## 1.1 基本功能
+## 1.3 基本功能
 - 身份认证：即登录
 - 授权：使得用户无法访问未授权的资源
 - 防御常见攻击
@@ -908,6 +908,558 @@ public class WebSecurityConfig {
     <input type="submit" value="登录">
 </form>
 ```
+
+# 3. 前后端分离
+- 登录成功：AuthenticationSuccessHandler
+- 登录失败：AuthenticationFailureHandler
+
+就需要重写两个handler中的方法
+
+## 3.1 引入fastjson依赖
+```xml
+<dependency>
+      <groupId>com.alibaba.fastjson2</groupId>
+      <artifactId>fastjson2</artifactId>
+      <version>2.0.9</version>
+</dependency>
+```
+
+## 3.2 用户认证成功
+```java
+public class MyAuthenticationSuccessHandler implements AuthenticationSuccessHandler {
+  @Override
+  public void onAuthenticationSuccess(HttpServletRequest request, HttpServletResponse response,
+                                      Authentication authentication) throws IOException, ServletException {
+    //获取用户身份信息
+    Object principal = authentication.getPrincipal();
+
+    HashMap result = new HashMap();
+    result.put("code", 0);
+    result.put("msg", "登录成功");
+    result.put("data", principal);
+
+    //将对象转为json字符串
+    String json = JSON.toJSONString(result);
+
+    //认证成功后返回json数据
+    response.setContentType("application/json;charset=UTF-8");
+    response.getWriter().println(json);
+
+  }
+}
+```
+在`WebSecurityConfig`中添加`.successHandler(new MyAuthenticationSuccessHandler())`，用于认证成功后的处理。
+```java
+@Bean
+public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    //开启授权保护
+    http.authorizeHttpRequests(
+          (authorize) -> authorize
+          //对所有请求开启授权保护
+          .anyRequest()
+          //已认证的请求会被自动授权
+          .authenticated()
+        )
+        //自动使用表单授权方式【注释后就没有html的登录页面了，就只有浏览器默认自带的】
+        .formLogin(form -> {
+          form.loginPage("/login").permitAll()
+            .usernameParameter("myusername")
+            .passwordParameter("mypassword")
+            .failureUrl("/login?error")//校验失败时跳转
+            .successHandler(new MyAuthenticationSuccessHandler())//认证成功时的处理
+          ;
+        });
+        //基本授权方式
+        //.httpBasic(Customizer.withDefaults());
+
+    //关闭CSRF攻击防御
+//    http.csrf(csrf -> csrf.disable());
+
+    return http.build();
+  }
+```
+登录成功后得到：
+![img_35.png](img_35.png)
+
+## 3.3 用户认证失败
+```java
+public class MyAuthenticationFailureHandler implements AuthenticationFailureHandler {
+  @Override
+  public void onAuthenticationFailure(HttpServletRequest request, HttpServletResponse response, AuthenticationException exception) throws IOException, ServletException {
+
+    String localizedMessage = exception.getLocalizedMessage();
+
+    HashMap result = new HashMap();
+    result.put("code", -1);
+    result.put("msg", localizedMessage);
+
+    //将对象转为json字符串
+    String json = JSON.toJSONString(result);
+
+    //认证成功后返回json数据
+    response.setContentType("application/json;charset=UTF-8");
+    response.getWriter().println(json);
+  }
+}
+```
+在`WebSecurityConfig`中添加`.failureHandler(new MyAuthenticationFailureHandler())`，用于认证失败后的处理。
+```java
+@Bean
+  public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    //开启授权保护
+    http.authorizeHttpRequests(
+          (authorize) -> authorize
+          //对所有请求开启授权保护
+          .anyRequest()
+          //已认证的请求会被自动授权
+          .authenticated()
+        )
+        //自动使用表单授权方式【注释后就没有html的登录页面了，就只有浏览器默认自带的】
+        .formLogin(form -> {
+          form.loginPage("/login").permitAll()
+            .usernameParameter("myusername")
+            .passwordParameter("mypassword")
+            .failureUrl("/login?error")//校验失败时跳转
+            .successHandler(new MyAuthenticationSuccessHandler())//认证成功时的处理
+            .failureHandler(new MyAuthenticationFailureHandler())//认证失败时的处理
+          ;
+        });
+        //基本授权方式
+        //.httpBasic(Customizer.withDefaults());
+
+    //关闭CSRF攻击防御
+//    http.csrf(csrf -> csrf.disable());
+
+    return http.build();
+  }
+```
+
+登录失败后得到：
+![img_36.png](img_36.png)
+
+## 3.4 注销响应
+```java
+public class MyLogoutSuccessHandler implements LogoutSuccessHandler {
+  @Override
+  public void onLogoutSuccess(HttpServletRequest request, HttpServletResponse response,
+                              Authentication authentication) throws IOException, ServletException {
+
+    HashMap result = new HashMap();
+    result.put("code", 0);//成功
+    result.put("msg", "注销成功");
+
+    //将对象转为json字符串
+    String json = JSON.toJSONString(result);
+
+    //认证成功后返回json数据
+    response.setContentType("application/json;charset=UTF-8");
+    response.getWriter().println(json);
+  }
+}
+```
+`http.logout(logout -> {
+      logout.logoutSuccessHandler(new MyLogoutSuccessHandler()); //注销成功处理
+    });`
+![img_40.png](img_40.png)
+
+## 3.5 请求未认证处理
+```java
+public class MyAuthenticationEntryPoint implements AuthenticationEntryPoint {
+  @Override
+  public void commence(HttpServletRequest request, HttpServletResponse response,
+                       AuthenticationException authException) throws IOException, ServletException {
+    String localizedMessage = authException.getLocalizedMessage();
+
+    HashMap result = new HashMap();
+    result.put("code", -1); //失败
+    result.put("msg", localizedMessage);
+
+    //将对象转为json字符串
+    String json = JSON.toJSONString(result);
+
+    //认证成功后返回json数据
+    response.setContentType("application/json;charset=UTF-8");
+    response.getWriter().println(json);
+  }
+}
+```
+`http.exceptionHandling(exception -> {
+      exception.authenticationEntryPoint(new MyAuthenticationEntryPoint()); //请求未认证处理
+    });`
+![img_37.png](img_37.png)
+
+自定义提示信息
+```java
+public class MyAuthenticationEntryPoint implements AuthenticationEntryPoint {
+  @Override
+  public void commence(HttpServletRequest request, HttpServletResponse response,
+                       AuthenticationException authException) throws IOException, ServletException {
+    String localizedMessage = "需要登录"; //authException.getLocalizedMessage();
+
+    HashMap result = new HashMap();
+    result.put("code", -1); //失败
+    result.put("msg", localizedMessage);
+
+    //将对象转为json字符串
+    String json = JSON.toJSONString(result);
+
+    //认证成功后返回json数据
+    response.setContentType("application/json;charset=UTF-8");
+    response.getWriter().println(json);
+  }
+}
+```
+![img_38.png](img_38.png)
+
+
+## 3.6 跨域处理
+- 跨域：跨域资源共享（Cross-Origin Resources Sharing, CORS），是浏览器的保护机制，只允许网页请求统一域名下的服务，同一域名指的是协议、域名、端口都相同，否则就会被浏览器拦截，报跨域错误。如果有一项不同，那么就是跨域请求。在前后端分离的项目中，需要解决跨域的问题。
+
+在Spring Security中，在配置文件中添加如下代码即可：
+`http.cors(withDefaults());`
+前端通过ajax调用后端接口。
+
+
+# 4. 身份认证
+## 4.1 基本概念
+![img_39.png](img_39.png)
+- Principal：用户身份信息
+- Credentials：用户凭证
+- Authorities：用户权限
+
+改造IndexController，要用`@RestController`
+做了脱敏处理的地方，会返回null，不会直接拿到。
+```java
+@RestController
+public class IndexController {
+
+  @GetMapping("/")
+  public Map index() {
+    SecurityContext context = SecurityContextHolder.getContext();
+    Authentication authentication = context.getAuthentication();
+    Object principal = authentication.getPrincipal();
+    Object credentials = authentication.getCredentials(); //脱敏
+    Collection<? extends GrantedAuthority> authorities = authentication.getAuthorities();
+    String name = authentication.getName();
+
+    HashMap result = new HashMap();
+    result.put("username", name);
+    result.put("authorities", authorities);
+
+    return result;
+  }
+}
+```
+结果：
+![img_41.png](img_41.png)
+
+
+## 4.2 会话并发处理
+后登录的账号会使先登录的账号失效
+```java
+public class MySessionInformationExpiredStrategy implements SessionInformationExpiredStrategy {
+
+  /**
+   * 当会话失效时的处理.
+   *
+   * @param event
+   * @throws IOException
+   * @throws ServletException
+   */
+  @Override
+  public void onExpiredSessionDetected(SessionInformationExpiredEvent event) throws IOException,
+      ServletException {
+
+    HashMap result = new HashMap();
+    result.put("code", -1); //失败
+    result.put("msg", "该账号已从其他设备登录");
+
+    //将对象转为json字符串
+    String json = JSON.toJSONString(result);
+
+    //返回响应
+    HttpServletResponse response = event.getResponse();
+    response.setContentType("application/json;charset=UTF-8");
+    response.getWriter().println(json);
+
+  }
+}
+```
+用不同的浏览器去登录，后登录的浏览器也能登录，并将前一个浏览器挤掉
+![img_42.png](img_42.png)
+
+
+# 5. 授权
+可以通过以下两种常见的方式实现授权需求：
+- 用户-权限-资源：权限分配给用户
+- 用户-角色-权限-资源：权限分配给角色
+
+## 5.1 基于request的授权
+
+### 5.1.1 用户-权限-资源
+- 需求：
+  - 具有USER_LIST权限的用户可以访问/user/list接口
+  - 具有USER_ADD权限的用户可以访问/user/add接口
+
+1. 配置权限：
+在SecurityFilterChain中配置:
+```java
+http.authorizeHttpRequests(
+  (authorize) -> authorize
+  .requestMatchers("/user/list").hasAuthority("USER_LIST")
+  .requestMatchers("/user/add").hasAuthority("USER_ADD")
+  //对所有请求开启授权保护
+  .anyRequest()
+  //已认证的请求会被自动授权
+  .authenticated()
+);
+```
+2. 授予权限：
+权限分配可以通过，在user表中添加字段，也可以单独建立权限表，再建立与user表的一对一/一对多关系。
+这里直接在代码中硬编码了：
+- DBUserDetailsManager：
+```java
+@Override
+  public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+    QueryWrapper<User> queryWrapper = new QueryWrapper<>();
+    queryWrapper.eq("username", username);
+    User user = userMapper.selectOne(queryWrapper);
+    if (user == null) {
+      throw new UsernameNotFoundException(username);
+    } else {
+      Collection<GrantedAuthority> authorities = new ArrayList<>();
+      authorities.add(() -> "USER_LIST");
+      authorities.add(() -> "USER_ADD");
+      
+      //组装security中的user对象
+      return new org.springframework.security.core.userdetails.User(
+          user.getUsername(),
+          user.getPassword(),
+          user.getEnabled(),
+          true, //用户账号是否过期
+          true, //用户凭证是否过期
+          true, //用户是否未被锁定
+          authorities //权限列表【暂时先创建空的】
+      );
+    }
+
+  }
+```
+再次登录后，会有显示权限信息：
+![img_43.png](img_43.png)
+
+后续可以测试两个接口
+
+3. 请求未授权的接口
+
+在`WebSecurityConfig`中的`SecurityFilterChain`进行配置
+`http.exceptionHandling(exception -> {
+      exception.authenticationEntryPoint(new MyAuthenticationEntryPoint()); //请求未认证处理
+      exception.accessDeniedHandler(new MyAccessDeniedHandler());
+    });`
+创建一个类`MyAccessDeniedHandler`
+```java
+public class MyAccessDeniedHandler implements AccessDeniedHandler {
+  @Override
+  public void handle(HttpServletRequest request, HttpServletResponse response,
+                     AccessDeniedException accessDeniedException) throws IOException,
+      ServletException {
+
+    HashMap result = new HashMap();
+    result.put("code", -1); //失败
+    result.put("msg", "没有权限");
+
+    //将对象转为json字符串
+    String json = JSON.toJSONString(result);
+
+    //认证成功后返回json数据
+    response.setContentType("application/json;charset=UTF-8");
+    response.getWriter().println(json);
+  }
+}
+```
+结果得到：
+![img_44.png](img_44.png)
+
+### 5.1.2 用户-角色-资源
+- 需求：角色为ADMIN的用户才可以访问`/user/**`路径下的资源
+
+1. 配置权限：
+```java
+http.authorizeHttpRequests(
+          (authorize) -> authorize
+//            .requestMatchers("/user/list").hasAuthority("USER_LIST")
+//            .requestMatchers("/user/add").hasAuthority("USER_ADD")
+            .requestMatchers("/user/**").hasRole("ADMIN")
+          //对所有请求开启授权保护
+          .anyRequest()
+          //已认证的请求会被自动授权
+          .authenticated()
+);
+```
+2. 为用户分配角色：
+同样可以是在user表中创建角色字段，或者创建角色表做映射。
+这里直接在`DBUserDetailsManager`中硬编码
+```java
+@Override
+public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+  QueryWrapper<User> queryWrapper = new QueryWrapper<>();
+  queryWrapper.eq("username", username);
+  User user = userMapper.selectOne(queryWrapper);
+  if (user == null) {
+    throw new UsernameNotFoundException(username);
+  } else {
+
+    return org.springframework.security.core.userdetails.User
+            .withUsername(user.getUsername())
+            .password(user.getPassword())
+            .disabled(!user.getEnabled())
+            .credentialsExpired(false)
+            .accountLocked(false)
+            .roles("ADMIN")
+            .build();
+
+  }
+
+}
+```
+
+> 总结：5.1.1和5.1.2，本质都是在用户的信息中添加`authorities`，
+ 
+ 
+### 5.1.3 用户-角色-权限-资源
+RBAC（Role-Based Access Control）是一种常用的数据库设计方案，它将用户的权限分配和管理与角色相关联。
+
+>常见的数据库设计方案示例：用户和角色相关联，角色和权限相关联。
+- 用户表（users）：存储用户的基本信息，如用户名、密码、邮箱等。
+- 角色表（roles）：存储系统中的角色信息，如管理员、普通用户等。
+- 权限表（permissions）：存储系统中的权限信息，如查看用户列表、添加用户等。
+- 用户角色关联表（user_roles）：用于关联用户和角色，实现多对多关系。
+- 角色权限关联表（role_permissions）：用于关联角色和权限，实现多对多关系。
+
+之后可以通过5.1.1中用户-权限-资源的方式来实现。
+
+
+## 5.2 基于方法的授权
+将注解`@EnableMethodSecurity`放到`WebSecurityConfig`中，开启基于方法的授权。
+开启后，用户可以对所有的接口进行访问。
+如果要对不同接口进行访问权限限制，可以在接口上添加注解`@PreAuthorize("hasRole('USER')")`
+- 在`DBUserDetailsManager`中给用户分配权限
+```java
+@Override
+  public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+    QueryWrapper<User> queryWrapper = new QueryWrapper<>();
+    queryWrapper.eq("username", username);
+    User user = userMapper.selectOne(queryWrapper);
+    if (user == null) {
+      throw new UsernameNotFoundException(username);
+    } else {
+      /** Collection<GrantedAuthority> authorities = new ArrayList<>();
+//      authorities.add(() -> "USER_LIST");
+      authorities.add(() -> "USER_ADD");
+
+      //组装security中的user对象
+      return new org.springframework.security.core.userdetails.User(
+          user.getUsername(),
+          user.getPassword(),
+          user.getEnabled(),
+          true, //用户账号是否过期
+          true, //用户凭证是否过期
+          true, //用户是否未被锁定
+          authorities //权限列表【暂时先创建空的】
+      );*/
+
+      return org.springframework.security.core.userdetails.User
+        .withUsername(user.getUsername())
+        .password(user.getPassword())
+        .disabled(!user.getEnabled())
+        .credentialsExpired(false)
+        .accountLocked(false)
+        .roles("USER")
+        .build();
+
+    }
+
+  }
+```
+- 给接口设置访问权限
+```java
+@RestController
+@RequestMapping("/user")
+public class UserController {
+  @Resource
+  public UserService userService;
+
+  /**
+   * 获取用户列表.
+   *
+   * @return
+   */
+  @PreAuthorize("hasRole('ADMIN')")
+  @GetMapping("/list")
+  public List<User> getList() {
+    return userService.list();
+  }
+
+  /**
+   * 添加用户.
+   *
+   * @param user 用户信息
+   * @return
+   */
+  @PreAuthorize("hasRole('USER')")
+  @PostMapping("/add")
+  public void add(@RequestBody User user) {
+    userService.saveUserDetails(user);
+  }
+
+}
+```
+- 测试：
+  - 登录
+![img_45.png](img_45.png)
+  - 接口`/demo/user/list`
+![img_46.png](img_46.png)
+  - 接口`/demo/`，index界面，没有添加注解`@PreAuthorize`，就可以访问
+![img_47.png](img_47.png)
+
+另外，可以进一步限定方法的访问权限，角色和用户名都是admin：`@PreAuthorize("hasRole('ADMIN') and authentication.name == 'admin'")`
+- 非admin用户登录：
+![img_49.png](img_49.png)
+![img_48.png](img_48.png)
+- admin用户登录
+![img_51.png](img_51.png)
+![img_50.png](img_50.png)
+
+还可以在接口设置`@PreAuthorize("hasAuthority('USER_ADD')")`
+然后在`loadUserByUsername`方法中，添加授权`.authorities("USER_ADD")`
+```java
+@Override
+  public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+    QueryWrapper<User> queryWrapper = new QueryWrapper<>();
+    queryWrapper.eq("username", username);
+    User user = userMapper.selectOne(queryWrapper);
+    if (user == null) {
+      throw new UsernameNotFoundException(username);
+    } else {
+      
+      return org.springframework.security.core.userdetails.User
+        .withUsername(user.getUsername())
+        .password(user.getPassword())
+        .disabled(!user.getEnabled())
+        .credentialsExpired(false)
+        .accountLocked(false)
+        .roles("ADMIN")
+        .authorities("USER_ADD")
+        .build();
+
+    }
+
+  }
+```
+这样设置的话，用户登录后的信息就会变为这种形式：
+![img_52.png](img_52.png)
+
 
 # OAuth2.0
 简单理解，就是在不提供密码的情况下获得授权访问受限资源。
